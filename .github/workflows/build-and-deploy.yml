@@ -36,7 +36,7 @@ jobs:
         S3_URI="s3://$S3_BUCKET/$S3_KEY"
 
         # Output the S3 URI for the next step
-        echo "S3_URI=$S3_URI" >> $GITHUB_ENV
+        echo "S3_URI=$S3_URI" >> $GITHUB_OUTPUT
 
     - name: Run ECS task with overrides
       run: |
