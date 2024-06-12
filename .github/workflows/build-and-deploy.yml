@@ -8,7 +8,8 @@ on:
 jobs:
   build-and-deploy:
     runs-on: self-hosted
-
+    outputs:
+      s3_uri=${{ steps.upload.outputs.S3_URI }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
@@ -42,7 +43,8 @@ jobs:
         set -e
 
         # Load the S3 URI
-        S3_URI=${{ env.S3_URI }}
+        echo "${{ steps.upload.outputs.S3_URI }}"
+        S3_URI=${{ steps.upload.outputs.S3_URI }}
 
         # Variables
         CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}"
