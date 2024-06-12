@@ -9,7 +9,7 @@ jobs:
   build-and-deploy:
     runs-on: self-hosted
     outputs:
-      s3_uri=${{ steps.upload.outputs.S3_URI }}
+      s3_uri: ${{ steps.upload.outputs.S3_URI }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
