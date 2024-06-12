@@ -19,9 +19,6 @@ jobs:
         unzip awscliv2.zip
         sudo ./aws/install --update
 
-    - name: Debug AWS CLI Configuration
-      run: aws sts get-caller-identity --region us-east-1
-
     - name: Upload repository to S3
       id: upload
       run: |
