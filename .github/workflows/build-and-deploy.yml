@@ -57,6 +57,7 @@ jobs:
         aws ecs run-task \
             --cluster $CLUSTER_NAME \
             --task-definition $TASK_DEFINITION \
+            --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUPS],assignPublicIp=ENABLED}" \
             --region us-east-1 \
             --overrides '{
