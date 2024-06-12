@@ -19,6 +19,8 @@ jobs:
         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
         unzip awscliv2.zip
         sudo ./aws/install --update
+        # Remove installation files to save space
+        rm -rf awscliv2.zip aws/
 
     - name: Upload repository to S3
       id: upload
@@ -30,10 +32,10 @@ jobs:
         S3_KEY="artifacts"
 
         touch context.tar.gz
-        tar --exclude=context.tar.gz -zcvf context.tar.gz .
+        tar --exclude='context.tar.gz' --exclude='awscliv2.zip' --exclude='./aws' --exclude='./node_modules' --exclude='./venv' --exclude='./dist' --exclude='./build' --exclude='./tmp' -zcvf context.tar.gz .
 
         # Upload to S3
-        aws s3 cp context.tar.gz s3://$S3_BUCKET/$S3_KEY/context.tar.gz --region us-east-1
+        aws s3 cp context.tar.gz s3://$S3_BUCKET/$S3_KEY/context.tar.gz --region ${{ secrets.AWS_REGION }}
 
         # Get the S3 URI
         S3_URI="s3://$S3_BUCKET/$S3_KEY"
@@ -64,7 +66,7 @@ jobs:
             --task-definition $TASK_DEFINITION \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUPS],assignPublicIp=ENABLED}" \
-            --region us-east-1 \
+            --region $AWS_REGION \
             --overrides '{
                 "containerOverrides": [
                     {
