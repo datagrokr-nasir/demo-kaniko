@@ -29,10 +29,12 @@ jobs:
         S3_BUCKET="${{ secrets.S3_BUCKET }}"
         S3_KEY="artifacts"
 
-        tar -C ${{ github.workspace }} -zcvf context.tar.gz .
+        sleep 5
+        
+        tar -C $LOCAL_DIR -zcvf context.tar.gz .
 
         # Upload to S3
-        aws s3 cp context.tar.gz s3://${{ secrets.S3_BUCKET }}/$S3_KEY/context.tar.gz --region us-east-1
+        aws s3 cp context.tar.gz s3://$S3_BUCKET/$S3_KEY/context.tar.gz --region us-east-1
 
         # Get the S3 URI
         S3_URI="s3://$S3_BUCKET/$S3_KEY"
