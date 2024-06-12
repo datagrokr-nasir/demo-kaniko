@@ -20,7 +20,7 @@ jobs:
         sudo ./aws/install --update
 
     - name: Debug AWS CLI Configuration
-      run: aws sts get-caller-identity
+      run: aws sts get-caller-identity --region us-east-1
 
     - name: Upload repository to S3
       id: upload
@@ -32,7 +32,7 @@ jobs:
         S3_KEY="mysfits-code"
 
         # Upload to S3
-        aws s3 cp --recursive $LOCAL_DIR s3://$S3_BUCKET/$S3_KEY
+        aws s3 cp --recursive $LOCAL_DIR s3://$S3_BUCKET/$S3_KEY --region us-east-1
 
         # Get the S3 URI
         S3_URI="s3://$S3_BUCKET/$S3_KEY"
@@ -61,6 +61,7 @@ jobs:
             --cluster $CLUSTER_NAME \
             --task-definition $TASK_DEFINITION \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUPS],assignPublicIp=ENABLED}" \
+            --region us-east-1 \
             --overrides '{
                 "containerOverrides": [
                     {
