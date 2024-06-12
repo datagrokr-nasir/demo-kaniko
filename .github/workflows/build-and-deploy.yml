@@ -1,0 +1,75 @@
+name: Build and Deploy with Kaniko
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Install AWS CLI
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y unzip
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+
+    - name: Upload repository to S3
+      id: upload
+      run: |
+        set -e
+        # Variables
+        LOCAL_DIR="${{ github.workspace }}"
+        S3_BUCKET="${{ secrets.S3_BUCKET }}"
+        S3_KEY="mysfits-code"
+
+        # Upload to S3
+        aws s3 cp --recursive $LOCAL_DIR s3://$S3_BUCKET/$S3_KEY
+
+        # Get the S3 URI
+        S3_URI="s3://$S3_BUCKET/$S3_KEY"
+
+        # Output the S3 URI for the next step
+        echo "S3_URI=$S3_URI" >> $GITHUB_ENV
+
+    - name: Run ECS task with overrides
+      run: |
+        set -e
+
+        # Load the S3 URI
+        S3_URI=${{ env.S3_URI }}
+
+        # Variables
+        CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}"
+        SUBNETS="${{ secrets.SUBNETS }}"  # Comma-separated list of subnet IDs
+        SECURITY_GROUPS="${{ secrets.SECURITY_GROUPS }}"  # Comma-separated list of security group IDs
+        TASK_FAMILY="kaniko-demo"
+        TASK_DEFINITION="${{ secrets.TASK_DEFINITION }}"  # The ARN or family name of the task definition to use
+        KANIKO_DEMO_IMAGE="${{ secrets.KANIKO_DEMO_IMAGE }}"
+        AWS_REGION="${{ secrets.AWS_REGION }}"
+
+        # Run the ECS task with command override
+        aws ecs run-task \
+            --cluster $CLUSTER_NAME \
+            --task-definition $TASK_DEFINITION \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUPS],assignPublicIp=ENABLED}" \
+            --overrides '{
+                "containerOverrides": [
+                    {
+                        "name": "kaniko",
+                        "command": [
+                            "--context", "'"$S3_URI"'",
+                            "--dockerfile", "Dockerfile",
+                            "--destination", "'"$KANIKO_DEMO_IMAGE"'",
+                            "--force"
+                        ]
+                    }
+                ]
+            }'
