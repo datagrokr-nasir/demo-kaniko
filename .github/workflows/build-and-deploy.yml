@@ -10,7 +10,6 @@ jobs:
     runs-on: self-hosted
     outputs:
       s3_uri: ${{ steps.upload.outputs.S3_URI }}
-      task_arn: ${{ steps.run-kaniko-task.outputs.TASK_ARN }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
@@ -45,7 +44,6 @@ jobs:
         echo "S3_URI=$S3_URI" >> $GITHUB_OUTPUT
 
     - name: Run ECS task with overrides
-      id: run-kaniko-task
       run: |
         set -e
 
@@ -63,7 +61,7 @@ jobs:
         AWS_REGION="${{ secrets.AWS_REGION }}"
 
         # Run the ECS task with command override
-        TASK_ARN=$(aws ecs run-task \
+        aws ecs run-task \
             --cluster $CLUSTER_NAME \
             --task-definition $TASK_DEFINITION \
             --launch-type FARGATE \
@@ -81,50 +79,4 @@ jobs:
                         ]
                     }
                 ]
-            }' \
-            --query 'tasks[0].taskArn' \
-            --output text)
-
-        # Output the TASK_ARN for the next step
-        echo "TASK_ARN=$TASK_ARN" >> $GITHUB_OUTPUT
-
-    - name: Monitor ECS task
-      run: |
-        set -e
-        # Load the TASK_ARN from the previous step
-        TASK_ARN=${{ steps.run-kaniko-task.outputs.TASK_ARN }}
-        CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}"
-        AWS_REGION="${{ secrets.AWS_REGION }}"
-
-        # Function to get the task status
-        get_task_status() {
-          aws ecs describe-tasks \
-            --cluster $CLUSTER_NAME \
-            --tasks $TASK_ARN \
-            --region $AWS_REGION \
-            --query 'tasks[0].lastStatus' \
-            --output text
-        }
-
-        # Loop until the task stops
-        STATUS=$(get_task_status)
-        while [[ "$STATUS" != "STOPPED" ]]; do
-          echo "Task is still running. Current status: $STATUS"
-          sleep 15
-          STATUS=$(get_task_status)
-        done
-
-        # Get the task exit code
-        EXIT_CODE=$(aws ecs describe-tasks \
-          --cluster $CLUSTER_NAME \
-          --tasks $TASK_ARN \
-          --region $AWS_REGION \
-          --query 'tasks[0].containers[0].exitCode' \
-          --output text)
-
-        if [ "$EXIT_CODE" -eq "0" ]; then
-          echo "Kaniko task completed successfully."
-        else
-          echo "Kaniko task failed with exit code $EXIT_CODE."
-          exit $EXIT_CODE
-        fi
+            }'
