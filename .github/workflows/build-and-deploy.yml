@@ -8,9 +8,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: self-hosted
-    outputs:
-      s3_uri: ${{ steps.upload.outputs.S3_URI }}
-      task_arn: ${{ steps.run-kaniko-task.outputs.TASK_ARN }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
@@ -20,8 +17,8 @@ jobs:
         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
         unzip awscliv2.zip
         sudo ./aws/install --update
-        # Remove installation files to save space
         rm -rf awscliv2.zip aws/
+
     - name: Upload repository to S3
       id: upload
       run: |
@@ -30,21 +27,27 @@ jobs:
         LOCAL_DIR="${{ github.workspace }}"
         S3_BUCKET="${{ secrets.S3_BUCKET }}"
         S3_KEY="artifacts"
-        touch context.tar.gz
+
         tar --exclude='context.tar.gz' --exclude='awscliv2.zip' --exclude='./aws' --exclude='./node_modules' --exclude='./venv' --exclude='./dist' --exclude='./build' --exclude='./tmp' -zcvf context.tar.gz .
+
         # Upload to S3
         aws s3 cp context.tar.gz s3://$S3_BUCKET/$S3_KEY/context.tar.gz --region ${{ secrets.AWS_REGION }}
+
         # Get the S3 URI
         S3_URI="s3://$S3_BUCKET/$S3_KEY"
+
         # Output the S3 URI for the next step
         echo "S3_URI=$S3_URI" >> $GITHUB_OUTPUT
+
     - name: Run ECS task with overrides
       id: run-kaniko-task
       run: |
         set -e
+
         # Load the S3 URI
         echo "${{ steps.upload.outputs.S3_URI }}"
         S3_URI=${{ steps.upload.outputs.S3_URI }}
+
         # Variables
         CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}"
         SUBNETS="${{ secrets.SUBNETS }}"  # Comma-separated list of subnet IDs
@@ -53,6 +56,7 @@ jobs:
         TASK_DEFINITION="${{ secrets.TASK_DEFINITION }}"  # The ARN or family name of the task definition to use
         KANIKO_DEMO_IMAGE="${{ secrets.KANIKO_DEMO_IMAGE }}"
         AWS_REGION="${{ secrets.AWS_REGION }}"
+
         # Run the ECS task with command override
         TASK_ARN=$(aws ecs run-task \
             --cluster $CLUSTER_NAME \
@@ -75,15 +79,19 @@ jobs:
             }' \
             --query 'tasks[0].taskArn' \
             --output text)
+
         # Output the TASK_ARN for the next step
-        echo "TASK_ARN=$TASK_ARN" >> $GITHUB_OUTPUT
+        echo "TASK_ARN=$TASK_ARN" >> $GITHUB_ENV
+
     - name: Monitor ECS task
+      id: monitor-task
       run: |
         set -e
         # Load the TASK_ARN from the previous step
-        TASK_ARN=${{ steps.run-kaniko-task.outputs.TASK_ARN }}
+        TASK_ARN=${{ env.TASK_ARN }}
         CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}"
         AWS_REGION="${{ secrets.AWS_REGION }}"
+
         # Function to get the task status
         get_task_status() {
           aws ecs describe-tasks \
@@ -93,6 +101,7 @@ jobs:
             --query 'tasks[0].lastStatus' \
             --output text
         }
+
         # Loop until the task stops
         STATUS=$(get_task_status)
         while [[ "$STATUS" != "STOPPED" ]]; do
@@ -100,6 +109,7 @@ jobs:
           sleep 15
           STATUS=$(get_task_status)
         done
+
         # Get the task exit code
         EXIT_CODE=$(aws ecs describe-tasks \
           --cluster $CLUSTER_NAME \
@@ -107,9 +117,47 @@ jobs:
           --region $AWS_REGION \
           --query 'tasks[0].containers[0].exitCode' \
           --output text)
+
+        echo "EXIT_CODE=$EXIT_CODE" >> $GITHUB_ENV
+
         if [ "$EXIT_CODE" -eq "0" ]; then
           echo "Kaniko task completed successfully."
         else
           echo "Kaniko task failed with exit code $EXIT_CODE."
-          exit $EXIT_CODE
         fi
+
+    - name: Retrieve and display Kaniko logs on failure
+      if: failure()
+      run: |
+        set -e
+        # Load the TASK_ARN from the previous step
+        TASK_ARN=${{ env.TASK_ARN }}
+        CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}"
+        AWS_REGION="${{ secrets.AWS_REGION }}"
+
+        # Get the log stream name
+        LOG_STREAM_NAME=$(aws ecs describe-tasks \
+          --cluster $CLUSTER_NAME \
+          --tasks $TASK_ARN \
+          --region $AWS_REGION \
+          --query 'tasks[0].containers[0].logStreamName' \
+          --output text)
+
+        if [ "$LOG_STREAM_NAME" != "None" ]; then
+          echo "Log Stream Name: $LOG_STREAM_NAME"
+
+          # Retrieve the logs
+          LOGS=$(aws logs get-log-events \
+            --log-group-name "kaniko-builder" \
+            --log-stream-name "$LOG_STREAM_NAME" \
+            --region $AWS_REGION \
+            --query 'events[*].message' \
+            --output text)
+
+          echo "Kaniko Logs:"
+          echo "$LOGS"
+        else
+          echo "No log stream found for task $TASK_ARN"
+        fi
+
+        exit 1
